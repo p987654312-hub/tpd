@@ -3,240 +3,249 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # --------------------------------------------------------------------------
-# 1. 설문지 파일 불러오기 (파일이 같은 폴더에 있어야 합니다)
-# --------------------------------------------------------------------------
-try:
-    import survey_step1
-except ImportError:
-    st.error("survey_step1.py 파일이 없습니다. 같은 폴더에 파일을 만들어주세요.")
-
-# --------------------------------------------------------------------------
-# 2. 페이지 기본 설정 및 디자인 (CSS)
+# 1. 페이지 설정
 # --------------------------------------------------------------------------
 st.set_page_config(
-    page_title="교원 성장 Mate", 
-    layout="wide", 
+    page_title="교원 성장 Mate",
+    page_icon="🌱",
+    layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 세션 상태 초기화 (새로고침 시 데이터 유지용)
-if 'user' not in st.session_state: st.session_state.user = None
-if 'auth_mode' not in st.session_state: st.session_state.auth_mode = 'login'
-if 'page' not in st.session_state: st.session_state.page = "dashboard"
-
-# CSS 스타일 정의
+# --------------------------------------------------------------------------
+# 2. 이미지와 똑같이 만드는 '초강력 CSS'
+# --------------------------------------------------------------------------
 st.markdown("""
     <style>
-    /* 기본 폰트 및 배경 설정 */
-    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700&display=swap');
+    /* 전체 폰트 적용 */
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Pretendard', sans-serif; }
+
+    /* 1. 배경색 (연한 하늘색) */
+    [data-testid="stAppViewContainer"] {
+        background-color: #EBF3FF;
+    }
     
-    /* 상단 헤더, 사이드바 숨기기 & 제목 링크 아이콘 제거 */
+    /* 헤더 숨기기 */
     [data-testid="stHeader"] { visibility: hidden; }
-    [data-testid="stSidebar"] { display: none; }
-    .element-container:has(h1, h2, h3) a { display: none !important; }
     
-    /* 로그인 박스 디자인 */
-    .auth-box {
+    /* 2. 상단 네비게이션 바 스타일 */
+    .nav-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 20px;
+        background: transparent;
+        margin-bottom: 20px;
+    }
+    .nav-logo { font-size: 20px; font-weight: 800; color: #7c3aed; display: flex; align-items: center; gap: 10px; }
+    .nav-user { font-size: 14px; color: #555; }
+    
+    /* 3. 메인 배너 (흰색 긴 박스) */
+    .welcome-banner {
         background-color: white;
         padding: 40px;
         border-radius: 24px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        text-align: center;
-        max-width: 450px;
-        margin: 0 auto;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        margin-bottom: 30px;
+        position: relative;
+    }
+    .sync-badge {
+        position: absolute;
+        top: -15px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #E0E7FF;
+        color: #4F46E5;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
     }
     
-    /* 버튼 공통 디자인 */
+    /* 4. 카드 공통 스타일 (Step 1~5) */
+    .step-card {
+        background-color: white;
+        padding: 25px;
+        border-radius: 20px;
+        height: 320px; /* 높이 고정 */
+        position: relative;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+        transition: 0.3s;
+        border: 1px solid transparent;
+    }
+    .step-card:hover { transform: translateY(-5px); }
+    
+    /* (활성화된 카드 - Step 2 느낌) */
+    .step-card-active {
+        border: 2px solid #A7F3D0;
+        background-color: #F0FDF4;
+    }
+    
+    .step-bg-number {
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 4rem;
+        font-weight: 900;
+        color: #F3F4F6;
+        z-index: 0;
+    }
+    .step-icon { font-size: 2.5rem; margin-bottom: 15px; z-index: 1; position: relative; }
+    .step-title { font-size: 1.1rem; font-weight: 800; color: #1F2937; margin-bottom: 10px; z-index: 1; position: relative; }
+    .step-desc { font-size: 0.85rem; color: #6B7280; line-height: 1.4; margin-bottom: 20px; z-index: 1; position: relative; height: 60px; }
+
+    /* 5. 버튼 스타일 커스텀 */
     div.stButton > button {
-        width: 100%;
-        border-radius: 12px;
-        height: 45px;
-        font-weight: bold;
+        border-radius: 8px;
+        font-size: 13px;
+        padding: 5px 15px;
         border: none;
-        transition: 0.2s;
+        width: 100%;
+        font-weight: 600;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------------
-# 3. 구글 시트 연결 및 유틸 함수
+# 3. 데이터 로직 (기존 유지)
 # --------------------------------------------------------------------------
+if 'user' not in st.session_state: st.session_state.user = None
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def clean_val(val):
-    """숫자/문자 형식을 통일하고 공백을 제거하는 함수"""
-    if pd.isna(val) or val == "": return ""
-    try: return str(int(float(val))).strip()
-    except: return str(val).strip()
-
 def get_data():
-    """시트 데이터를 안전하게 가져오는 함수"""
     try:
         df = conn.read(worksheet="users", ttl=0)
         df.columns = [c.lower().strip() for c in df.columns]
         return df
-    except Exception as e:
-        st.error(f"데이터 연결 오류: {e}")
-        return None
+    except: return None
 
 # --------------------------------------------------------------------------
-# 4. 메인 로직 시작
+# 4. 화면 구현
 # --------------------------------------------------------------------------
 
-# [상황 A] 로그인을 아직 안 했을 때
+# [A] 로그인 전 화면 (간단하게 유지)
 if st.session_state.user is None:
-    # 로그인 화면 전용 배경 (보라색 그라데이션)
-    st.markdown("""
-        <style>
-        [data-testid="stAppViewContainer"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1,1,1])
+    with c2:
+        st.markdown("""
+        <div style="background:white; padding:40px; border-radius:20px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+            <h2 style="color:#667eea;">🌱 교원 성장 Mate</h2>
+            <p style="color:#888;">로그인이 필요합니다.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.form("login"):
+            uid = st.text_input("아이디")
+            upw = st.text_input("비밀번호", type="password")
+            if st.form_submit_button("로그인"):
+                df = get_data()
+                if df is not None:
+                    user = df[df['id'].astype(str) == str(uid)]
+                    if not user.empty and str(user.iloc[0]['password']) == str(upw):
+                        st.session_state.user = user.iloc[0].to_dict()
+                        st.rerun()
+                    else: st.error("정보 불일치")
+                else: st.error("연결 실패")
 
-    _, col, _ = st.columns([1, 1.5, 1])
-    with col:
-        st.markdown("<div style='height: 10vh;'></div>", unsafe_allow_html=True)
-        
-        # A-1. 회원가입 모드
-        if st.session_state.auth_mode == 'signup':
-            st.markdown('<div class="auth-box"><h2>🌱 회원가입</h2><p style="color:#718096;">선생님의 정보를 입력해주세요.</p>', unsafe_allow_html=True)
-            
-            with st.form("signup_form"):
-                new_id = st.text_input("아이디 (ID)")
-                new_pw = st.text_input("비밀번호 (PW)", type="password")
-                new_name = st.text_input("성함 (Name)")
-                new_school = st.text_input("소속 학교 (School)")
-                
-                if st.form_submit_button("가입 완료"):
-                    df = get_data()
-                    if df is not None:
-                        # 아이디 중복 체크
-                        if clean_val(new_id) in df['id'].apply(clean_val).values:
-                            st.error("이미 사용 중인 아이디입니다.")
-                        else:
-                            # 새 유저 추가 (step1_status 기본값: 미실시)
-                            new_row = pd.DataFrame([{
-                                "id": new_id, 
-                                "password": new_pw, 
-                                "name": new_name, 
-                                "school": new_school, 
-                                "step1_status": "미실시"
-                            }])
-                            updated_df = pd.concat([df, new_row], ignore_index=True)
-                            conn.update(worksheet="users", data=updated_df)
-                            
-                            st.success("가입되었습니다! 로그인해주세요.")
-                            st.session_state.auth_mode = 'login'
-                            st.rerun()
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-            if st.button("이미 계정이 있으신가요? 로그인하기"):
-                st.session_state.auth_mode = 'login'
-                st.rerun()
-
-        # A-2. 로그인 모드
-        else:
-            st.markdown('<div class="auth-box"><h2>🚀 EDU Mate</h2><p style="color:#718096;">로그인하여 성장을 시작하세요.</p>', unsafe_allow_html=True)
-            
-            with st.form("login_form"):
-                uid = st.text_input("아이디")
-                upw = st.text_input("비밀번호", type="password")
-                
-                if st.form_submit_button("로그인"):
-                    df = get_data()
-                    if df is not None:
-                        target_id = clean_val(uid)
-                        user_row = df[df['id'].apply(clean_val) == target_id]
-                        
-                        if not user_row.empty and clean_val(user_row.iloc[0]['password']) == clean_val(upw):
-                            # 로그인 성공! 세션 저장 후 페이지 새로고침
-                            st.session_state.user = user_row.iloc[0].to_dict()
-                            st.session_state.page = "dashboard" # 대시보드로 이동 설정
-                            st.rerun()
-                        else:
-                            st.error("아이디 또는 비밀번호가 일치하지 않습니다.")
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-            if st.button("처음 오셨나요? 회원가입하기"):
-                st.session_state.auth_mode = 'signup'
-                st.rerun()
-
-# [상황 B] 로그인 성공 후
+# [B] 로그인 후 대시보드 (★ 디자인 집중 구현 ★)
 else:
-    # 대시보드 전용 배경 (흰색) 및 헤더 보이기
-    st.markdown("""
-        <style>
-        [data-testid="stAppViewContainer"] { background: #FFFFFF; }
-        [data-testid="stHeader"] { visibility: visible; background: transparent; }
-        </style>
+    user = st.session_state.user
+    
+    # 1. 상단 네비게이션 (HTML로 구현)
+    st.markdown(f"""
+        <div class="nav-bar">
+            <div class="nav-logo">🌱 교원 성장 메이트</div>
+            <div class="nav-user">
+                신구초 | <span style="color:#667eea; font-weight:bold;">{user['name']}</span> 님 &nbsp; 
+            </div>
+        </div>
     """, unsafe_allow_html=True)
-
-    # B-1. 설문지 페이지 ("survey" 상태일 때)
-    if st.session_state.page == "survey":
-        # survey_step1.py 파일의 show_survey 함수 실행
-        # (conn과 clean_val 함수를 넘겨줘서 거기서도 쓸 수 있게 함)
-        survey_step1.show_survey(conn, clean_val)
-
-    # B-2. 메인 대시보드 페이지
-    else:
-        user = st.session_state.user
-        
-        # 상단 네비게이션 느낌
-        st.markdown(f"### 🏫 {user.get('school', '학교 미정')} | {user['name']} 선생님")
-        st.title("나의 성장 대시보드")
-        st.markdown("---")
-
-        # 최신 상태 업데이트 (시트 다시 읽기)
-        try:
-            df = get_data()
-            curr_user = df[df['id'].apply(clean_val) == clean_val(user['id'])].iloc[0]
-            s1_status = str(curr_user.get('step1_status', '미실시')).strip()
-            st.session_state.user['step1_status'] = s1_status # 세션 동기화
-        except:
-            s1_status = str(user.get('step1_status', '미실시')).strip()
-
-        is_done = (s1_status == "완료")
-
-        # 카드 레이아웃
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # 상태에 따른 스타일 결정
-            bg_color = "#D1FAE5" if is_done else "#F3F4F6" # 초록 / 회색
-            border_color = "#10B981" if is_done else "#E5E7EB"
-            status_text = "✅ 실시완료" if is_done else "⚪ 미실시"
-            btn_text = "결과 확인" if is_done else "진단 시작하기"
-            btn_key = "btn_start_s1"
-            
-            # HTML 카드 렌더링
-            st.markdown(f"""
-                <div style="background-color: {bg_color}; padding: 30px; border-radius: 20px; 
-                            border: 2px solid {border_color}; text-align: center; margin-bottom: 20px;">
-                    <h4 style="color: #4B5563; margin:0;">STEP 01</h4>
-                    <h2 style="color: #1F2937; margin: 10px 0;">역량 진단</h2>
-                    <div style="font-weight: bold; font-size: 1.2rem; color: #059669;">{status_text}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # 🔥 [중요] 페이지 전환 버튼 로직
-            if st.button(btn_text, key=btn_key):
-                st.session_state.page = "survey"  # 페이지 상태 변경
-                st.rerun()                        # 화면 즉시 새로고침
-
-        # (추가 기능 예시)
-        with col2:
-             st.markdown("""
-                <div style="background-color: #F3F4F6; padding: 30px; border-radius: 20px; 
-                            border: 2px solid #E5E7EB; text-align: center; margin-bottom: 20px; color: #9CA3AF;">
-                    <h4>STEP 02</h4><h2>연수 추천</h2><div>🔒 잠김</div>
-                </div>
-            """, unsafe_allow_html=True)
-             st.button("준비중", disabled=True, key="btn_s2")
-
-        st.markdown("---")
-        if st.button("로그아웃"):
+    
+    # 로그아웃 버튼 (우측 상단 위치 조정용)
+    with st.container():
+        _, col_logout = st.columns([9, 1])
+        if col_logout.button("로그아웃", key="top_logout"):
             st.session_state.user = None
-            st.session_state.page = "dashboard"
             st.rerun()
+
+    # 2. 메인 배너 (안녕하세요, OOO 선생님!)
+    st.markdown(f"""
+        <div class="welcome-banner">
+            <div class="sync-badge">☁️ 클라우드 동기화 활성 상태</div>
+            <h1 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 10px;">
+                👏 안녕하세요, <span style="color:#667eea;">{user['name']}</span> 선생님!
+            </h1>
+            <p style="color:#6B7280; font-size: 1rem;">
+                교원 성장 메이트와 함께 단계별로 역량을 진단하고 더 나은 미래를 계획해보세요. 
+                모든 데이터는 자동으로 동기화됩니다.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 3. 5단계 카드 그리드 (핵심 UI)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    # --- Step 1: 사전 역량 진단 (완료 상태 예시) ---
+    with col1:
+        st.markdown("""
+            <div class="step-card">
+                <div class="step-bg-number">01</div>
+                <div class="step-icon">📝</div>
+                <div class="step-title">사전 역량 진단</div>
+                <div class="step-desc">SJT 평가를 통해 현재 나의 강점과 보완점을 파악합니다.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        # 버튼은 HTML 밖에 native streamlit 버튼 사용 (기능 연결을 위해)
+        st.button("✅ 완료", disabled=True, key="btn1") # 이미 완료된 느낌
+
+    # --- Step 2: 자기역량 개발계획 (현재 진행중 - 초록색 강조) ---
+    with col2:
+        # 여기만 step-card-active 클래스 추가
+        st.markdown("""
+            <div class="step-card step-card-active">
+                <div class="step-bg-number" style="color:#D1FAE5;">02</div>
+                <div class="step-icon">🌱</div>
+                <div class="step-title">자기역량 개발계획</div>
+                <div class="step-desc">진단 결과를 바탕으로 맞춤형 성장 계획을 수립합니다.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        # 활성화된 버튼
+        if st.button("🚀 진행하기", key="btn2"):
+            st.success("2단계 페이지로 이동합니다!")
+
+    # --- Step 3: 사후 역량 진단 ---
+    with col3:
+        st.markdown("""
+            <div class="step-card" style="opacity: 0.7; background:#F9FAFB;">
+                <div class="step-bg-number">03</div>
+                <div class="step-icon">📈</div>
+                <div class="step-title" style="color:#9CA3AF;">사후 역량 진단</div>
+                <div class="step-desc">활동 후 변화된 역량을 재진단하여 성장율을 확인합니다.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.button("🔒 진행전", disabled=True, key="btn3")
+
+    # --- Step 4: 개발결과 보고서 ---
+    with col4:
+        st.markdown("""
+            <div class="step-card" style="opacity: 0.7; background:#F9FAFB;">
+                <div class="step-bg-number">04</div>
+                <div class="step-icon">🏆</div>
+                <div class="step-title" style="color:#9CA3AF;">개발결과 보고서</div>
+                <div class="step-desc">1년의 성장 과정을 기록하고 증빙자료를 정리합니다.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.button("🔒 진행전", disabled=True, key="btn4")
+
+    # --- Step 5: 자기실적평가서 ---
+    with col5:
+        st.markdown("""
+            <div class="step-card" style="opacity: 0.7; background:#F9FAFB;">
+                <div class="step-bg-number">05</div>
+                <div class="step-icon">☑️</div>
+                <div class="step-title" style="color:#9CA3AF;">자기실적평가서</div>
+                <div class="step-desc">교사 본인의 실적을 종합적으로 평가하여 제출합니다.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.button("🔒 진행전", disabled=True, key="btn5")
