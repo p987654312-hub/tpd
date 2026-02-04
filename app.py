@@ -24,19 +24,23 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def check_login(user_id, user_pw):
     try:
-        df = conn.read(worksheet="users", ttl=0) # 실시간 반영을 위해 ttl=0 추가
+        # 실시간 반영을 위해 ttl=0 설정
+        df = conn.read(worksheet="users", ttl=0)
         
-        # 데이터 형식을 문자열로 통일하여 비교 (가장 안전한 방법)
+        # 시트의 컬럼명이 'password'이므로 아래와 같이 수정합니다.
+        # 양 끝 공백 제거(strip)와 문자열 변환(astype(str))을 추가하여 정확도를 높였습니다.
         user_row = df[
-            (df['id'].astype(str) == str(user_id)) & 
-            (df['password'].astype(str) == str(user_pw)) # 시트가 password면 password로!
+            (df['id'].astype(str).str.strip() == str(user_id).strip()) & 
+            (df['password'].astype(str).str.strip() == str(user_pw).strip())
         ]
         
         if not user_row.empty:
+            # 로그인 성공 시 사용자 정보를 딕셔너리로 반환
             return user_row.iloc[0].to_dict()
+        return None
     except Exception as e:
-        st.error(f"오류 발생: {e}")
-    return None
+        st.error(f"데이터를 읽는 중 오류가 발생했습니다: {e}")
+        return None
 
 # 🔐 3. 로그인 세션 관리
 if 'user' not in st.session_state:
@@ -98,4 +102,5 @@ else:
     st.write("")
 
     st.info(f"💡 현재 **'{st.session_state.user['status']}'** 단계에 계시네요. 다음 목표까지 조금만 더 힘내세요!")
+
 
