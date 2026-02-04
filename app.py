@@ -24,7 +24,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def check_login(user_id, user_pw):
     df = conn.read(worksheet="users")
-    user_row = df[(df['id'] == user_id) & (df['pw'] == str(user_pw))]
+    user_row = df[
+    (df['id'].astype(str) == str(user_id)) & 
+    (df['pw'].astype(str) == str(user_pw))
+]
     if not user_row.empty:
         return user_row.iloc[0].to_dict()
     return None
@@ -87,4 +90,5 @@ else:
 
     # 추가 콘텐츠 영역
     st.write("")
+
     st.info(f"💡 현재 **'{st.session_state.user['status']}'** 단계에 계시네요. 다음 목표까지 조금만 더 힘내세요!")
