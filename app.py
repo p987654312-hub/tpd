@@ -23,13 +23,19 @@ st.markdown("""
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def check_login(user_id, user_pw):
-    df = conn.read(worksheet="users")
-    user_row = df[
-    (df['id'].astype(str) == str(user_id)) & 
-    (df['pw'].astype(str) == str(user_pw))
-]
-    if not user_row.empty:
-        return user_row.iloc[0].to_dict()
+    try:
+        df = conn.read(worksheet="users", ttl=0) # 실시간 반영을 위해 ttl=0 추가
+        
+        # 데이터 형식을 문자열로 통일하여 비교 (가장 안전한 방법)
+        user_row = df[
+            (df['id'].astype(str) == str(user_id)) & 
+            (df['password'].astype(str) == str(user_pw)) # 시트가 password면 password로!
+        ]
+        
+        if not user_row.empty:
+            return user_row.iloc[0].to_dict()
+    except Exception as e:
+        st.error(f"오류 발생: {e}")
     return None
 
 # 🔐 3. 로그인 세션 관리
@@ -45,11 +51,11 @@ if st.session_state.user is None:
         st.subheader("로그인")
         with st.form("login_form"):
             input_id = st.text_input("아이디")
-            input_pw = st.text_input("비밀번호", type="password")
+            input_password = st.text_input("비밀번호", type="password")
             submit = st.form_submit_button("로그인")
             
             if submit:
-                user_info = check_login(input_id, input_pw)
+                user_info = check_login(input_id, input_password)
                 if user_info:
                     st.session_state.user = user_info
                     st.rerun()
@@ -92,3 +98,4 @@ else:
     st.write("")
 
     st.info(f"💡 현재 **'{st.session_state.user['status']}'** 단계에 계시네요. 다음 목표까지 조금만 더 힘내세요!")
+
